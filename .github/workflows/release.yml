@@ -1,0 +1,92 @@
+name: Release
+
+# Push a tag like v1.2.3 to build the app, package a DMG and publish a GitHub release.
+# Run it by hand from the Actions tab to get the DMG as a build artifact, with no release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Xcode 27 image, arm64 only. The app targets macOS 27, so an older image cannot build it.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 27
+        run: |
+          XCODE=$(find /Applications -maxdepth 1 -name 'Xcode_27*.app' | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
+          xcodebuild -version
+          xcodebuild -version | grep -q '^Xcode 27' || { echo "::error::Xcode 27 not active"; exit 1; }
+
+      - name: Version
+        id: v
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"; else TAG="v0.0.0-dev.$GITHUB_RUN_NUMBER"; fi
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::Tag must look like v1.2.3 or v1.2.3-beta.1"; exit 1; }
+          VERSION=${TAG#v}
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "marketing=${VERSION%%-*}"
+            if [[ "$VERSION" == *-* ]]; then echo "prerelease=--prerelease"; else echo "prerelease="; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          # Ad-hoc signed: no Apple Developer certificate needed. The project's own team is blanked out.
+          xcodebuild \
+            -project PointerDrop.xcodeproj \
+            -scheme PointerDrop \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
+            MARKETING_VERSION="${{ steps.v.outputs.marketing }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            DEVELOPMENT_TEAM= \
+            build
+          APP=build/Build/Products/Release/PointerDrop.app
+          codesign --verify --deep --strict "$APP"
+          plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundleShortVersionString|CFBundleVersion|LSUIElement'
+
+      - name: DMG
+        run: |
+          APP=build/Build/Products/Release/PointerDrop.app
+          # hdiutil sometimes reports "Resource busy" on hosted runners: one retry.
+          scripts/make-dmg.sh "$APP" "${{ steps.v.outputs.version }}" dist || { sleep 10; scripts/make-dmg.sh "$APP" "${{ steps.v.outputs.version }}" dist; }
+          cd dist
+          shasum -a 256 "PointerDrop-${{ steps.v.outputs.version }}.dmg" > "PointerDrop-${{ steps.v.outputs.version }}.dmg.sha256"
+          ls -l
+
+      - name: Upload artifact
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PointerDrop-dmg
+          path: dist/*
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          FILES=(dist/PointerDrop-${{ steps.v.outputs.version }}.dmg dist/PointerDrop-${{ steps.v.outputs.version }}.dmg.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" --verify-tag --title "PointerDrop $TAG" --generate-notes ${{ steps.v.outputs.prerelease }}
+          fi

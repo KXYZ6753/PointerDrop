@@ -12,19 +12,13 @@ import SwiftUI
 struct Icon: View {
     @ObservedObject var s: Store
 
-    var body: some View {
-        if s.done && s.jobs.isEmpty {
-            Image(nsImage: greenCheck)
-        } else {
-            Image(systemName: s.recording ? "record.circle" : s.jobs.isEmpty && !s.running ? "cursorarrow.click" : "clock")
-        }
-    }
+    var body: some View { Image(nsImage: image) }
 
-    private var greenCheck: NSImage {
-        let i = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)!
-            .withSymbolConfiguration(.init(paletteColors: [.systemGreen]))!
-        i.isTemplate = false  // menu bar tints template images, which would drop the green
-        return i
+    private var image: NSImage {
+        if s.recording { return menuIcon(.none, color: .systemRed) }
+        if s.done && s.jobs.isEmpty { return menuIcon(.check, color: .systemGreen) }
+        if !s.jobs.isEmpty || s.running { return menuIcon(.clock) }
+        return menuIcon(.none)
     }
 }
 

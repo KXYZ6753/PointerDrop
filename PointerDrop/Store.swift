@@ -17,7 +17,7 @@ final class Store: ObservableObject {
     @Published var presets: [Preset] = [] { didSet { save() } }
     @Published var draft: [Click] = []
     @Published var draftSaved = false
-    @Published var blockClicks = false
+    @Published var blockClicks = true { didSet { UserDefaults.standard.set(blockClicks, forKey: "blockClicks") } }
     @Published var recording = false
     @Published var running = false
     @Published var done = false
@@ -36,6 +36,7 @@ final class Store: ObservableObject {
             presets = s.presets ?? []
             done = !shots.isEmpty
         }
+        if let b = UserDefaults.standard.object(forKey: "blockClicks") as? Bool { blockClicks = b }
         updateAwake()
         // ponytail: 1s poll survives system sleep; swap for per-job timers if sub-second accuracy matters
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in

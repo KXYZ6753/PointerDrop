@@ -14,10 +14,40 @@ Record clicks. Schedule them. They replay on their own.
 
 ## Requirements
 
-- macOS 27
+- Apple silicon, macOS 27
 - Accessibility and Screen Recording permission
 - Mac awake and unlocked at run time. The app keeps it awake while a run is scheduled.
+
+## Install
+
+1. Download the DMG from [Releases](../../releases) and drag PointerDrop to Applications.
+2. The app is not notarized. On first launch open **System Settings → Privacy & Security → Open Anyway**, or run:
+   ```
+   xattr -dr com.apple.quarantine /Applications/PointerDrop.app
+   ```
+3. Grant Accessibility and Screen Recording, then relaunch.
+
+After an update, macOS treats the new build as a different app. Remove PointerDrop from both permission lists and add it again.
+
+Check the download:
+
+```
+shasum -a 256 -c PointerDrop-<version>.dmg.sha256
+```
 
 ## Build
 
 Open `PointerDrop.xcodeproj` in Xcode and run.
+
+## Release
+
+Push a tag. GitHub Actions builds the app, packs it into a DMG and publishes a release.
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Tags look like `v1.2.3`. `v1.2.3-beta.1` is published as a pre-release. To test the build without a release, run **Release** from the Actions tab and download the DMG artifact.
+
+Locally: `scripts/make-dmg.sh path/to/PointerDrop.app 1.0.0 dist`. `scripts/make-icon.swift` redraws the app icon.
