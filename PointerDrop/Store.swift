@@ -38,10 +38,17 @@ final class Store: ObservableObject {
         }
         if let b = UserDefaults.standard.object(forKey: "blockClicks") as? Bool { blockClicks = b }
         updateAwake()
+        requestPermissions()
         // ponytail: 1s poll survives system sleep; swap for per-job timers if sub-second accuracy matters
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+    }
+
+    // Asked at launch so a scheduled run never fails on a missing permission.
+    private func requestPermissions() {
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
     }
 
     private func save() {
@@ -98,7 +105,7 @@ final class Store: ObservableObject {
     // MARK: Schedule + run
 
     func schedule(at date: Date) {
-        if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
+        requestPermissions()
         jobs.append(Job(clicks: draft, fire: date))
         jobs.sort { $0.fire < $1.fire }
         draft = []; draftSaved = false
